@@ -3,107 +3,119 @@
 import re
 from io import BytesIO
 from docx import Document
-from docx.shared import Pt
-from docx.enum.text import WD_COLOR_INDEX
+from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-def normalizar_texto(texto):
-    """
-    Função de limpeza para a busca flexível. Remove espaços extras, 
-    quebras de linha e converte para minúsculas.
-    """
-    return re.sub(r'\s+', ' ', texto).strip().lower()
+def extrair_nome_aluno(texto_completo_ia):
+    """Extrai o nome do aluno da seção '### Nome do Aluno'."""
+    match = re.search(r"### Nome do Aluno\s*\n(.*?)\n", texto_completo_ia, re.DOTALL)
+    if match:
+        nome = match.group(1).strip()
+        if nome:
+            return nome
+    return "Nome_Nao_Identificado"
 
-def parse_analise_ia(texto_analise):
-    """
-    Lê a análise em Markdown da IA e a transforma em dados estruturados (dicionários)
-    que o Python pode usar para construir o documento.
-    """
-    dados = {'competencias': {}}
-    nota_match = re.search(r"\*\*Nota Estimada:\*\*\s*(\d+)", texto_analise)
-    if nota_match:
-        dados['nota_geral'] = nota_match.group(1)
+def extrair_secao(texto_completo, titulo_secao):
+    """Extrai o conteúdo de uma seção específica do texto da IA."""
+    padrao = re.compile(f"### {titulo_secao}(.*?)(?=### |$)", re.DOTALL)
+    match = padrao.search(texto_completo)
+    if match:
+        return match.group(1).strip()
+    return ""
 
-    blocos = re.split(r'####\s*(Competência \d+.*)', texto_analise)
-    
-    for i in range(1, len(blocos), 2):
-        nome_competencia_full = blocos[i].strip()
-        conteudo_competencia = blocos[i+1].strip()
-        
-        num_competencia_match = re.search(r"Competência (\d+)", nome_competencia_full)
-        if not num_competencia_match: continue
-        
-        id_competencia = f"C{num_competencia_match.group(1)}"
-        dados['competencias'][id_competencia] = { 'erros': [] }
-        
-        erros_matches = re.finditer(r"\*\*Trecho com erro:\*\*\s*\"(.*?)\"", conteudo_competencia, re.DOTALL)
-        for erro_match in erros_matches:
-            trecho_com_erro = erro_match.group(1).strip().replace('\n', ' ')
-            if trecho_com_erro and "copie aqui" not in trecho_com_erro:
-                dados['competencias'][id_competencia]['erros'].append(trecho_com_erro)
-                
-    return dados
+def adicionar_paragrafo_com_icone(document, texto, cor):
+    """Adiciona um parágrafo com um ícone quadrado colorido e texto em negrito."""
+    p = document.add_paragraph()
+    run_icone = p.add_run('■ ')
+    run_icone.font.color.rgb = cor
+    run_icone.font.size = Pt(12)
+    run_texto = p.add_run(texto)
+    run_texto.bold = True
+    run_texto.font.size = Pt(12)
 
-def highlight_text(paragraph, text_to_highlight, color):
-    """
-    Busca flexível que encontra um texto dentro de um parágrafo e aplica
-    uma cor de fundo (highlight), ignorando pequenas diferenças.
-    """
-    texto_normalizado_paragrafo = normalizar_texto(paragraph.text)
-    texto_normalizado_highlight = normalizar_texto(text_to_highlight)
-    
-    if texto_normalizado_highlight in texto_normalizado_paragrafo:
-        # Esta é uma abordagem que destaca todo o parágrafo se o erro for encontrado.
-        # Uma implementação palavra por palavra é significativamente mais complexa.
-        for run in paragraph.runs:
-            run.font.highlight_color = color
-        return True
-    return False
-
-def criar_relatorio_avancado_docx(texto_original, texto_analise_ia):
-    """
-    Cria o relatório .docx final, com texto destacado e análise formatada.
-    """
+def criar_relatorio_avancado_docx(analise_completa_ia):
+    """Cria o relatório .docx final com nome do aluno no cabeçalho."""
     try:
-        dados_analise = parse_analise_ia(texto_analise_ia)
+        # Extrai todas as informações da resposta da IA primeiro
+        nome_aluno = extrair_nome_aluno(analise_completa_ia)
+        analise_competencias = extrair_secao(analise_completa_ia, "Análise das Competências")
+        nota_estimada = extrair_secao(analise_completa_ia, "Nota Estimada")
+        comentarios_gerais = extrair_secao(analise_completa_ia, "Comentários Gerais")
+
         document = Document()
         
-        nota_geral = dados_analise.get('nota_geral', 'N/A')
-        document.add_heading(f'Relatório de Correção - Nota Estimada: {nota_geral}', level=1)
-        
-        document.add_heading('Redação Original com Destaques', level=2)
-        p_original = document.add_paragraph(texto_original)
-        
         mapa_cores = {
-            'C1': WD_COLOR_INDEX.TURQUOISE,
-            'C2': WD_COLOR_INDEX.BRIGHT_GREEN,
-            'C3': WD_COLOR_INDEX.PINK,
-            'C4': WD_COLOR_INDEX.YELLOW,
-            'C5': WD_COLOR_INDEX.VIOLET,
+            '1': RGBColor(0x00, 0x70, 0xC0),  # Azul
+            '2': RGBColor(0x00, 0xB0, 0x50),  # Verde
+            '3': RGBColor(0xFF, 0x00, 0x00),  # Vermelho
+            '4': RGBColor(0xFF, 0xC0, 0x00),  # Amarelo
+            '5': RGBColor(0x70, 0x30, 0xA0),  # Roxo
         }
-        
-        for id_comp, dados_comp in dados_analise.get('competencias', {}).items():
-            cor = mapa_cores.get(id_comp)
-            if cor:
-                for erro in dados_comp.get('erros', []):
-                    highlight_text(p_original, erro, cor)
 
-        document.add_heading('Análise Detalhada da IA', level=2)
-        document.add_paragraph(texto_analise_ia)
+        # Título Principal
+        titulo = document.add_heading('Relatório de Correção da Redação', level=1)
+        titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
+        # --- NOVO: Adiciona o nome do aluno abaixo do título ---
+        if nome_aluno != "Nome_Nao_Identificado":
+            p_nome = document.add_paragraph()
+            p_nome.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run_label = p_nome.add_run('Nome: ')
+            run_label.bold = True
+            p_nome.add_run(nome_aluno)
+        
+        document.add_paragraph() # Adiciona um espaço
+
+        # Seção: Análise das Competências
+        document.add_heading('Análise das Competências', level=2)
+        if analise_competencias:
+            for linha in analise_competencias.split('\n'):
+                linha_limpa = linha.strip()
+                if not linha_limpa: continue
+                match_competencia = re.match(r'\*\*Competência (\d):.*?\*\*', linha_limpa)
+                if match_competencia:
+                    num_competencia = match_competencia.group(1)
+                    cor = mapa_cores.get(num_competencia, RGBColor(0,0,0))
+                    texto_competencia = linha_limpa.strip('*')
+                    adicionar_paragrafo_com_icone(document, texto_competencia, cor)
+                elif linha_limpa.startswith('*'):
+                    texto_lista = linha_limpa.strip('* ').strip()
+                    document.add_paragraph(texto_lista, style='List Bullet')
+                else:
+                    document.add_paragraph(linha_limpa)
+        else:
+            document.add_paragraph("A IA não conseguiu gerar uma análise detalhada.")
+        document.add_paragraph()
+        
+        # Seção: Nota Estimada
+        document.add_heading('Nota Estimada', level=2)
+        p_nota = document.add_paragraph()
+        run_nota = p_nota.add_run(nota_estimada or "N/A")
+        run_nota.font.size = Pt(16)
+        run_nota.bold = True
+        document.add_paragraph()
+        
+        # Seção: Comentários Gerais
+        document.add_heading('Comentários Gerais', level=2)
+        document.add_paragraph(comentarios_gerais or "Sem comentários adicionais.")
+        document.add_paragraph()
+
+        # Assinatura
+        assinatura = document.add_paragraph("Profª Elaine Vaz")
+        assinatura.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
         doc_buffer = BytesIO()
         document.save(doc_buffer)
         doc_buffer.seek(0)
         return doc_buffer
 
     except Exception as e:
-        print(f"❌ Erro ao gerar o arquivo DOCX: {e}")
-        # Fallback para um DOCX simples em caso de erro
+        print(f"❌ Erro ao gerar o arquivo DOCX formatado: {e}")
+        # Plano B
         document = Document()
-        document.add_heading('Erro ao Gerar Relatório')
-        document.add_paragraph(f"Ocorreu um erro: {e}")
-        document.add_paragraph(texto_analise_ia)
+        document.add_heading('Erro ao Gerar Relatório Formatado')
+        document.add_paragraph(f"Ocorreu um erro: {e}\n\n{analise_completa_ia}")
         doc_buffer = BytesIO()
         document.save(doc_buffer)
         doc_buffer.seek(0)
         return doc_buffer
-
