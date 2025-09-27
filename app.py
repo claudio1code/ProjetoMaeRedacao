@@ -2,95 +2,57 @@
 
 import streamlit as st
 from datetime import datetime
-from PIL import Image # Importa a biblioteca de imagem
 
-# Importa as funções CORRETAS e DEFINITIVAS dos seus arquivos de lógica
-from logica_ia import pre_processar_imagem, extrair_texto_da_imagem, analisar_redacao_com_gemini, analisar_redacao_com_ia, criar_documento_docx
+# Importa as funções da nossa nova lógica multimodal
+from logica_ia import analisar_imagem_com_gemini_multimodal, criar_documento_docx
 
-# --- Configuração da Página ---
 st.set_page_config(layout="wide")
-st.title("🤖 Corretor de Redação IA")
-st.markdown("Faça o upload da foto de uma redação manuscrita para receber uma análise detalhada e precisa.")
-
-# Adicionando um toque pessoal, conectando com o propósito do projeto
+st.title("🤖 Corretor de Redação IA (Versão Multimodal)")
+st.markdown("Faça o upload da foto de uma redação manuscrita para receber uma análise completa e precisa, lida diretamente pela IA.")
 st.write("Este projeto foi desenvolvido com um propósito especial: ajudar na reforma da casa para a chegada do meu filho. Cada correção feita com esta ferramenta contribui para um futuro melhor.")
 st.divider()
 
 # --- Área de Upload ---
 imagem_redacao = st.file_uploader(
-    "Envie a foto da redação aqui (formato .jpg, .png ou .jpeg)",
+    "Envie a foto da redação aqui (formato .jpg ou .png)",
     type=['jpg', 'png', 'jpeg']
 )
 
 st.divider()
 
-# --- Lógica Principal (só executa se uma imagem for enviada) ---
 if imagem_redacao is not None:
-    
-    # Exibe a imagem enviada para o usuário conferir
-    st.image(imagem_redacao, caption='Imagem da Redação Enviada', use_column_width=True)
-    st.divider()
-
-    # Seletor de Modelo de IA
-    modelo_ia_selecionado = st.selectbox(
-        "Escolha o modelo de IA para a correção:",
-        ("Google (Gemini Pro - Gratuito)", "OpenAI (GPT-4o - Pago)")
-    )
-    
-    if st.button("Analisar Redação", type="primary"):
+    if st.button("Analisar Redação com IA Multimodal", type="primary"):
         
         conteudo_imagem_bytes = imagem_redacao.getvalue()
 
-        # --- Etapa 1: Pré-processamento da Imagem ---
-        with st.spinner("1/4 - Otimizando a imagem para melhor leitura..."):
-            imagem_processada_bytes = pre_processar_imagem(conteudo_imagem_bytes)
-
-        # --- Etapa 2: OCR com Google Vision ---
-        with st.spinner("2/4 - Lendo o texto da imagem otimizada..."):
-            texto_extraido = extrair_texto_da_imagem(imagem_processada_bytes)
+        # --- Etapa Única: Análise Multimodal ---
+        # A IA agora lê a imagem, extrai o texto e corrige, tudo de uma só vez!
+        with st.spinner("Analisando a imagem e corrigindo a redação... Isso pode levar um minuto."):
+            analise_completa = analisar_imagem_com_gemini_multimodal(conteudo_imagem_bytes)
         
-        # Verifica se o OCR falhou
-        if "❌" in texto_extraido:
-            st.error(texto_extraido) # Mostra o erro detalhado da função
+        # Verifica se houve algum erro durante a análise
+        if "❌" in analise_completa:
+            st.error(analise_completa)
         else:
-            st.success("Texto extraído com sucesso!", icon="✅")
-
-            # --- Etapa 3: Análise com a IA Escolhida ---
-            correcao_da_ia = ""
-            with st.spinner(f"3/4 - {modelo_ia_selecionado} está analisando a redação..."):
-                if "Google (Gemini Pro - Gratuito)" in modelo_ia_selecionado:
-                    correcao_da_ia = analisar_redacao_com_gemini(texto_extraido)
-                elif "OpenAI (GPT-4o - Pago)" in modelo_ia_selecionado:
-                    correcao_da_ia = analisar_redacao_com_ia(texto_extraido)
-
-            st.success("Análise da IA concluída!", icon="🧠")
+            st.success("Análise concluída com sucesso!", icon="🎉")
             st.divider()
             
-            # --- Exibição dos Resultados ---
+            # --- Exibição e Download ---
             st.header("Resultados da Análise")
+            st.markdown(analise_completa) # Mostra a análise completa (transcrição + correção)
             
-            if "❌" in correcao_da_ia:
-                st.error(correcao_da_ia)
-            else:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.subheader("Texto Original Extraído")
-                    st.text_area("Texto:", value=texto_extraido, height=500, disabled=True)
-                with col2:
-                    st.subheader("Análise e Correção da IA")
-                    st.markdown(correcao_da_ia)
+            st.divider()
+            with st.spinner("Gerando relatório .docx para download..."):
+                arquivo_docx = criar_documento_docx(analise_completa)
                 
-                # --- Etapa 4: Download do DOCX ---
-                st.divider()
-                with st.spinner("4/4 - Gerando relatório .docx para download..."):
-                    # Aqui chamamos a função que usa o nosso especialista gerador_docx.py
-                    arquivo_docx = criar_documento_docx(texto_extraido, correcao_da_ia)
-                    nome_arquivo = f"correcao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
-                
-                st.download_button(
-                    label="📥 Baixar Relatório Completo em .docx",
-                    data=arquivo_docx,
-                    file_name=nome_arquivo,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
+                if arquivo_docx:
+                    nome_arquivo = f"correcao_multimodal_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+                    st.download_button(
+                        label="📥 Baixar Relatório Completo em .docx",
+                        data=arquivo_docx,
+                        file_name=nome_arquivo,
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+                else:
+                    st.error("Não foi possível gerar o arquivo .docx.")
 
